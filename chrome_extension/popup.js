@@ -223,21 +223,42 @@ class PerplexityExporter {
     let lastCount = 0;
     let noChangeCount = 0;
 
-    for (let scroll = 0; scroll < 50; scroll++) {
+    // 最大スクロール回数を増やす（100回 = 大量のスレッドに対応）
+    for (let scroll = 0; scroll < 100; scroll++) {
       // 現在表示されているスレッドを取得
       const newThreads = await this.executeInTabById(tabId, () => {
-        const links = document.querySelectorAll('a[href*="/search/"]');
+        // 複数のセレクタを試す
+        const selectors = [
+          'a[href*="/search/"]',
+          'a[href*="/thread/"]',
+          '[data-testid*="thread"] a',
+          '[class*="thread"] a[href]',
+          '[class*="library"] a[href*="/search"]'
+        ];
+
+        const links = new Set();
+        selectors.forEach(sel => {
+          document.querySelectorAll(sel).forEach(el => links.add(el));
+        });
+
         const results = [];
 
         links.forEach(link => {
           const href = link.getAttribute('href');
-          const title = link.innerText?.trim() || 'Untitled';
+          // タイトルを取得（複数の方法を試す）
+          let title = link.innerText?.trim()
+            || link.querySelector('[class*="title"]')?.innerText?.trim()
+            || link.getAttribute('title')
+            || 'Untitled';
 
-          if (href && href.includes('/search/')) {
+          if (href && (href.includes('/search/') || href.includes('/thread/'))) {
             const fullUrl = href.startsWith('/')
               ? `https://www.perplexity.ai${href}`
               : href;
-            results.push({ url: fullUrl, title: title.substring(0, 200) });
+            // 空や短すぎるタイトルを除外
+            if (title.length > 1) {
+              results.push({ url: fullUrl, title: title.substring(0, 200) });
+            }
           }
         });
 
@@ -251,21 +272,36 @@ class PerplexityExporter {
         }
       }
 
-      // 変化がなければ終了
+      this.log(`スクロール ${scroll + 1}: ${threads.length} 個発見`);
+
+      // 変化がなければカウント（5回連続で変化なしなら終了）
       if (threads.length === lastCount) {
         noChangeCount++;
-        if (noChangeCount >= 3) break;
+        if (noChangeCount >= 5) {
+          this.log('これ以上スレッドが見つかりません');
+          break;
+        }
       } else {
         noChangeCount = 0;
         lastCount = threads.length;
       }
 
-      // スクロール
+      // スクロール（複数の方法を試す）
       await this.executeInTabById(tabId, () => {
+        // 方法1: ページ全体をスクロール
         window.scrollTo(0, document.body.scrollHeight);
+
+        // 方法2: スクロール可能なコンテナを探してスクロール
+        const scrollContainers = document.querySelectorAll('[class*="scroll"], [class*="list"], main, [role="main"]');
+        scrollContainers.forEach(container => {
+          if (container.scrollHeight > container.clientHeight) {
+            container.scrollTop = container.scrollHeight;
+          }
+        });
       });
 
-      await this.sleep(1000);
+      // 待機時間を長めに（遅延ロードに対応）
+      await this.sleep(1500);
     }
 
     return threads;

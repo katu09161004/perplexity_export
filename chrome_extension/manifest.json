@@ -5,7 +5,9 @@
   "description": "Perplexityの過去のスレッドをMarkdown形式でエクスポート",
   "permissions": [
     "activeTab",
-    "downloads"
+    "downloads",
+    "scripting",
+    "tabs"
   ],
   "host_permissions": [
     "https://www.perplexity.ai/*"
